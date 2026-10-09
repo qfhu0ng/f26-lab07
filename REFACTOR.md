@@ -46,26 +46,83 @@ would detect that change.
 
 ### The directive
 
-**The refactor and the exact directive.** Name the refactor (one from the menu
-in the handout) and paste the directive you gave the agent, including the scope
-you set, meaning which files and packages were in bounds, which were not, and
-one line on why the boundary sits where it does.
+**The refactor and the exact directive.** Extract a class per booking type,
+using composition and a package-private `BookingHandler` interface. The user
+selected option A after comparing independent handler classes with an enum
+whose constants implement the behavior. Independent classes give the more
+complex recurring rules their own file, at the cost of more files and an extra
+call to follow. Both options use polymorphism.
+
+The agent proposed the following structure and scope. All conversation
+quotations below are English translations. After discussing alternatives,
+the user authorized option A by replying "Choose A", after the pin commit
+`b72f58e`.
+
+Proposed structure:
+
+> Consolidate each booking type's `submit/cancel/priceOf/describe` logic in its
+> corresponding class. Keep the common checks and entry points in
+> `BookingWorkflow`, with a single type mapping for dispatch. Keep the handler
+> classes and interface package-private to avoid expanding the public API.
+
+Proposed scope directive:
+
+> Modify production code only within `workflow/`. Preserve existing public
+> method signatures, validation order, return values, exceptions, storage
+> changes, and notification behavior. Preserve the recurring booking boundary
+> rule. Do not modify existing tests or the pin, or change domain, notify,
+> pricing, or reporting. Run the full test suite and show the diff afterward.
+
+The user's standing process instruction was:
+
+> Proceed step by step. Stop for my review and judgment before committing.
+
+The boundary stays within workflow/ because the repeated type branches are
+there; storage, data types, notification rendering, and pricing rules do not
+need to change. `REFACTOR.md` is the accompanying process record.
 
 ### The result
 
-**The diff and the suite.** How you are showing the diff to the TA (a commit,
-`git diff`, a branch), and the totals line (the shipped count plus your pin,
-all green).
+**Review status.** On October 8, 2026, after the refactor and verification
+results were presented for review, the user approved the implementation and
+asked to record the approval: "Review approved. Please record it."
 
-**What did NOT change: behavior and files.** The observable behavior you
-checked is still the same, including anything that surprised you while reading.
-Which files outside the scope are untouched, and how you verified that rather
-than assumed it. If the agent reached outside the directive, say where and what
-you did about it.
+**The diff and the suite.** The user approved the refactor and then authorized
+a final re-check and commit. The refactor is recorded in the commit containing
+this section, after pin commit `b72f58e`. For the TA, use
+`git diff b72f58e -- src/main/java/edu/cmu/cs214/scheduling/workflow/` to show
+the workflow change and all four added handler/interface files.
+`mvn -B test` after extraction and `mvn -B clean test` during the final re-check
+both report
+`Tests run: 36, Failures: 0, Errors: 0, Skipped: 0` and `BUILD SUCCESS`.
+
+**What did NOT change: behavior and files.** Agent verification presented during
+review: the pin still skips the adjacent recurring slot, books the second week
+with occurrence index 2, and keeps the expected stored bookings and notification
+count. Comparing the 12 extracted operation bodies with the original branches
+found the same Java tokens and string literals; only indentation changed.
+The final re-check also confirmed unchanged public constructor/method signatures
+and the same common entry-check sequences in all four operations.
+This includes recurring cancellation from the selected occurrence onward and
+pricing all uncancelled occurrences in a series. The common entry checks and
+room-name fallback remain in `BookingWorkflow`; its map covers all three
+current `BookingType` values. The recipient fallback was moved unchanged into
+`BookingHandler`, and the maximum series length remains 26.
+
+`git diff --exit-code b72f58e --` over `src/test`, the four production packages
+`domain/`, `notify/`, `pricing/`, `reporting/`, and build/setup files returned no
+changes. All four new Java files are within `workflow/`. Production changes
+stayed within the directive; documentation changes are confined to this file.
+Passing tests and branch comparison support preservation, but do not prove it
+for every possible input.
 
 **One thing the agent changed that you had to look at twice.** Something you
 checked line by line before accepting. If there was nothing, say how carefully
 you read the diff.
+
+The user approved the implementation. The specific point revisited, or depth
+of review if none required a second look, still needs the user's description.
+The approval alone does not supply that detail.
 
 ### The closing explanation
 
