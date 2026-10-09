@@ -166,42 +166,131 @@ the workflow could cost less to review than reorganizing most of its handlers.
 
 ## Milestone 2: The pattern critique
 
-Read `notify/`. It works and the outbox tests pass.
+The user reviewed and accepted the recommended direct-append design below,
+including its tradeoffs and compatibility limits. This is a design critique,
+not an implemented change to `notify/` or its tests.
 
 ### The patterns present
 
-List every design pattern you can name in that package. For each one, the class
-or classes that carry it.
+| Pattern or role | Classes and methods |
+| --- | --- |
+| Strategy | `NotificationStrategy.render()` and `EmailNotificationStrategy`, held by `NotificationHub`. |
+| Simple Factory | `NotifierFactory.createStrategy()`. It directly constructs the renderer; this is not the subclass-based GoF Factory Method structure. |
+| Singleton | `NotifierFactory`'s private constructor, static instance, and synchronized `getInstance()`. |
+| Observer | `NotificationHub.subscribe()/publish()`, `NotificationSubscriber`, and its `OutboxSubscriber` implementation. |
+| Object Adapter | `OutboxSubscriber` wraps an `Outbox`, translating `onNotification(rendered)` into `append(rendered)`. |
+| Facade-like entry point | `NotificationHub.publish()` hides formatting and delivery from workflow callers. This is the hub's role, not another separate layer. |
 
 ### The problem each one solves
 
-For each pattern you listed, what would have to be true about the requirements
-for that pattern to be the right call? One sentence each, not in terms of
-"flexibility".
+| Pattern or role | Requirement that would justify it |
+| --- | --- |
+| Strategy | Several rendering algorithms must be selectable independently of the booking workflow. |
+| Simple Factory | Callers need a central rule for selecting or constructing a renderer from configuration or user preferences. |
+| Singleton | Exactly one instance must own a process-wide resource or coordinate shared state. |
+| Observer | Several independently registered consumers must react to each notification without editing its publisher. |
+| Object Adapter | A required subscriber interface must work with an existing sink whose interface cannot be changed. |
+| Facade-like entry point | Booking operations should publish a message without knowing formatting and storage details. |
 
 ### Which of those problems exist here
 
-For each pattern, does the problem it solves exist in this codebase? Point at
-the code that settles it.
+- **Strategy:** No current choice of renderer. `EmailNotificationStrategy` is
+  the only implementation, and `NotificationHub(Outbox)` obtains it from the
+  factory rather than accepting a renderer. Workflow handlers always publish
+  the same message type.
+- **Factory:** No selection rule. `createStrategy()` always returns
+  `new EmailNotificationStrategy()`, and the hub constructor is its only
+  production caller.
+- **Singleton:** No resource that needs unique ownership. The factory has no
+  business state or external connection; its only state is the singleton
+  reference. `factoryHandsBackTheSameInstance` checks identity, but does not
+  establish a business need for it.
+- **Observer:** Registration exists, but repository call sites register only
+  `new OutboxSubscriber(outbox)` in the hub constructor. No other subscriber
+  implementation or production `subscribe()` call was found. The ability to
+  add listeners is real; a current need for multiple reactions is not shown.
+- **Adapter:** It resolves a real interface mismatch introduced by the current
+  Observer structure. Its entire callback is `outbox.append(rendered)`. If that
+  subscriber boundary goes away, the mismatch goes away too.
+- **Facade-like entry point:** This boundary is useful now. The three workflow
+  handlers call `hub.publish(...)`; none needs to know the rendered string
+  format or how the outbox stores it.
 
 ### The simpler structure
 
-**Your proposal.** What replaces `notify/`. Sketch the classes and the one
-method that matters.
+**Your proposal.** Keep a concrete `NotificationHub`, `NotificationMessage`,
+and `Outbox`. The hub keeps its default and injected-outbox constructors, input
+validation, and `getOutbox()`. Its one important method becomes:
 
-**What stays the same.** The tested behavior it must still produce, named
-precisely enough that a reader can check it against the shipped tests.
+```java
+public void publish(NotificationMessage message) {
+    outbox.append("To: " + message.recipient()
+            + " | Subject: " + message.subject()
+            + " | " + message.body());
+}
+```
 
-**What you would keep, if anything.** If you would keep one interface, say
-which and why. "None of it" is a fine answer if you can defend it.
+This removes the renderer interface/implementation, factory/singleton, and
+subscriber interface/adapter/list. It keeps formatting outside the workflow
+and preserves the existing outbox's ordered storage and access methods.
+`occurredAt` remains in the message but, as today, is not included in the text.
+
+An alternative is to remove only the renderer and factory layers while keeping
+Observer and its adapter. That preserves the public subscription facility but
+retains the callback/list indirection for a single known sink. For the current
+repository, the direct append is the smaller design. The alternative becomes
+preferable if independent listeners are an actual supported requirement.
+
+**What stays the same.** The proposal must preserve the exact
+`To: ... | Subject: ... | ...` text and one outbox append per publication,
+including confirmations sent through the workflow. These are checked by
+`publishedMessageLandsInTheOutboxFullyRendered` and
+`aConfirmationFromTheWorkflowReachesTheOutbox`; workflow tests also check
+notification counts after booking, cancellation, rejection, and the pinned
+partial series. The proposal continues to use the supplied outbox rather than
+silently creating a different one.
+
+There is a compatibility limit: `hubDeliversToItsOneSubscriber` explicitly
+asserts `subscriberCount() == 1`, and `factoryHandsBackTheSameInstance` requires
+the singleton accessor. Removing those APIs would break those tests; removing
+`subscribe()` would also remove a public capability, even though repository
+callers do not use it. This proposal therefore preserves notification outcomes,
+not every existing structural/API contract. Preserving every current test in a
+future implementation would require retaining compatibility APIs/layers. No
+test is changed or deleted for this lab, and no claim is made that the proposed
+replacement has been implemented or passes the unchanged suite.
+
+**What you would keep, if anything.** No notification interface is necessary
+for the current in-memory sink: injecting a concrete `Outbox` already makes
+its contents observable. Keep the hub as the entry point. If a real external
+delivery provider arrives, a narrow injectable delivery interface could isolate
+network access for tests; the current renderer interface does not do that.
 
 ### What would bring each layer back
 
-For at least two of the layers you would remove, what requirement, if it
-arrived next sprint, would make that layer the right structure? Be specific
-about the requirement, not about the pattern.
+- **Strategy:** Different tenants require plain-text and HTML renderers,
+  selected at construction and tested independently. Accept a rendering
+  strategy in the hub instead of fixing it internally.
+- **Factory:** Tenant configuration and user preferences determine which
+  renderer is constructed, and several entry points must use the same choice
+  rules. Centralize those rules in the factory.
+- **Observer:** Each publication must reach both the outbox and an audit
+  recorder, with consumers registered independently at startup.
+- **Adapter:** Those observers include a third-party archive exposing only
+  `append(String)`. Adapt that API to the subscriber callback.
+- **Singleton:** A future in-process coordinator must uniquely own a shared
+  resource. That would justify investigating singleton lifetime for the
+  coordinator, not automatically for this stateless factory; constructing one
+  owner at startup and injecting it may still avoid global access.
 
-**Misuse or anti-pattern?** Say which this is and why the distinction matters.
+**Misuse or anti-pattern?** The main issue is pattern misuse: Strategy, Factory,
+and Observer solve valid problems, but their variants, selection rules, and
+multiple consumers are absent here. Together the layers form the lecture's
+"pattern soup", an instance of speculative over-abstraction. Removing them
+improves traceability from `publish()` to the outbox at the cost of ready-made
+extension points. The critique is about their fit here, not a claim that the
+patterns are inherently bad. Adapter supports an unnecessary boundary, while
+the hub's facade-like separation still solves a current problem.
 
 ---
 
