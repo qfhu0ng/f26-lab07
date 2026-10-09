@@ -13,20 +13,36 @@ Keep it short and specific. Point at methods, call sites, and test names.
 
 ### The pin (write this section before you direct the refactor)
 
-**The pin.** File and test name, plus one sentence naming the method and the
-observable result it pins. Not "recurring bookings work". Green against the
-shipped code, and you did not edit or delete an existing test method to get
-there.
+**The pin.**
+`src/test/java/edu/cmu/cs214/scheduling/workflow/BookingWorkflowTest.java`:
+`recurringSubmitSkipsASlotThatStartsWhenAnotherEnds` pins that
+`BookingWorkflow.submit()` skips a recurring slot starting exactly when an
+existing booking ends, while still booking the following conflict-free week.
+The test checks the skipped slot, the booked slot and its original occurrence
+index, stored bookings, and notification count. It records current behavior,
+not a claim that the boundary rule is correct. No existing test method is edited
+or deleted.
 
-**Why that one, and does a shipped test already cover it?** Of everything
-`BookingWorkflow` does, why is this the behavior worth a test? If something
-shipped comes close, say what your pin adds. If nothing does, say how you
-checked.
+Validation before refactoring: `mvn -B test` against the unchanged shipped
+implementation reports `Tests run: 36, Failures: 0, Errors: 0, Skipped: 0`.
 
-**What a regeneration would do differently here.** Suppose someone
-threw this class away and regenerated it from a one-line description of what a
-booking workflow does. Name the decision that would be made a second time, and
-say which way it would probably go.
+**Why that one, and does a shipped test already cover it?**
+The recurring branch uses inclusive comparisons (`<=`) for room conflicts,
+whereas the regular branch uses strict comparisons (`<`). Consolidating those
+checks during a refactor could silently change the recurring behavior. The
+shipped `regularSubmitAcceptsASlotThatStartsWhenAnotherEnds` covers adjacency
+only for regular bookings; `recurringSubmitBooksEveryWeekOfAnOpenSeries` covers
+only a conflict-free series. Reading all four shipped test classes found no
+assertion on recurring adjacency or the skipped-slot list. This pin adds that
+boundary case with a second, available week, checking that the series is
+partially accepted rather than wholly rejected.
+
+**What a regeneration would do differently here.**
+A regeneration from a short description would have to choose the overlap
+boundary again. It would likely follow `TimeSlot`'s documented inclusive-start,
+exclusive-end convention and reuse the regular booking overlap check, accepting
+both weeks. That is a prediction, not a measured regeneration result; this test
+would detect that change.
 
 ### The directive
 
