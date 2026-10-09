@@ -296,9 +296,14 @@ the hub's facade-like separation still solves a current problem.
 
 ## Milestone 3: The missing pattern
 
-Read `pricing/`. Not coded, one sentence.
+The user approved this judgment after discussing alternatives and how
+Decorator works. No pricing code changes were made.
 
-**The pattern.** Which one fits `PriceCalculator`, and the problem that makes
-it fit. Name the problem.
+**The pattern.** Decorator fits `PriceCalculator` because weekend surcharges,
+long-booking discounts, and membership discounts compose around a base price;
+wrappers sharing a pricing interface could add these adjustments independently
+while preserving their order and rounding only the final result.
 
-**Would you apply it today?** Yes or no, one line, with the reason.
+**Would you apply it today?** No: the three adjustments form a short, fixed
+sequence with no current need for configurable combinations, so wrappers would
+add more indirection than useful extensibility.
