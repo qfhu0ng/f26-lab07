@@ -88,9 +88,9 @@ results were presented for review, the user approved the implementation and
 asked to record the approval: "Review approved. Please record it."
 
 **The diff and the suite.** The user approved the refactor and then authorized
-a final re-check and commit. The refactor is recorded in the commit containing
-this section, after pin commit `b72f58e`. For the TA, use
-`git diff b72f58e -- src/main/java/edu/cmu/cs214/scheduling/workflow/` to show
+a final re-check and commit. The refactor is recorded in commit `db4f683`,
+after pin commit `b72f58e`. For the TA, use
+`git diff b72f58e db4f683 -- src/main/java/edu/cmu/cs214/scheduling/workflow/` to show
 the workflow change and all four added handler/interface files.
 `mvn -B test` after extraction and `mvn -B clean test` during the final re-check
 both report
@@ -116,21 +116,51 @@ stayed within the directive; documentation changes are confined to this file.
 Passing tests and branch comparison support preservation, but do not prove it
 for every possible input.
 
-**One thing the agent changed that you had to look at twice.** Something you
-checked line by line before accepting. If there was nothing, say how carefully
-you read the diff.
-
-The user approved the implementation. The specific point revisited, or depth
-of review if none required a second look, still needs the user's description.
-The approval alone does not supply that detail.
+**One thing the agent changed that you had to look at twice.**
+I looked twice at the recurring submission loop after it moved into
+`RecurringBookingHandler.submit()`. I checked that a conflicting week is skipped
+without rejecting the whole series, and that later bookings retain their
+original occurrence numbers through `week + 1`. If the first week conflicts,
+the second week's booking must still have occurrence index 2. This detail was
+easy to overlook during extraction, so I compared the original branch with the
+new handler and checked the characterization test's assertions.
 
 ### The closing explanation
 
-**Refactor or regenerate?** Argue whether regenerating `BookingWorkflow` from scratch
-would have been the better call, using the lecture's four questions (test
-coverage, code age, spec quality, and reach). Be concrete about this codebase.
+The user reviewed and approved the following explanation on October 8, 2026.
 
-**What would flip your answer.** A condition about the artifact, not a feeling.
+**Refactor or regenerate?** Refactoring is the better fit for this change:
+
+- **Test coverage:** The 35 shipped tests cover the main operations, but did
+  not pin recurring adjacency. The added pin brings the suite to 36, without
+  making it a complete specification. Regeneration could still change untested
+  behavior; extraction permits comparison with the existing branch bodies.
+- **Code age:** The available history starts with one starter commit, followed
+  by the pin and this refactor. There is no long history of accumulated fixes
+  to preserve, which makes regeneration more plausible. That advantage alone
+  does not resolve the missing behavioral specification.
+- **Spec quality:** The README and method comments are not enough to rebuild
+  every decision. For example, `TimeSlot` documents an exclusive end, while
+  recurring conflict checks treat touching endpoints as a conflict. A rewrite
+  from the high-level description could silently choose the regular rule.
+- **Reach:** Workflow callers depend on the public operations and their
+  results; notification tests check exact rendered text. `ReportService` reads
+  the resulting store state, so changed writes or cancellation semantics could
+  affect reports even though it does not call the workflow directly.
+
+The existing separation of storage, pricing, notifications, and reporting is
+usable. The specific problem is repeated type dispatch, which the three
+handlers remove without replacing those boundaries. The cost is four extra
+types and an additional call to follow. Regeneration would require reviewing
+fresh implementations of the same rules with no clear benefit for this task.
+
+**What would flip your answer.** Regenerating the workflow would become more
+attractive if a new requirement invalidated the per-type organization, and a
+precise specification plus public-behavior tests covered the decisions a
+rewrite would otherwise guess: conflict boundaries, partial series acceptance,
+cancellation range, series pricing, and storage/notification effects. With
+those checks available and little historical repair knowledge to lose, replacing
+the workflow could cost less to review than reorganizing most of its handlers.
 
 ---
 
